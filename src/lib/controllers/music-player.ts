@@ -3,7 +3,7 @@ import { MessageController } from "../message-controller";
 import ytdl from 'ytdl-core';
 import ytsr from 'ytsr';
 import { getGuildMember, getGuildMemberVoiceChannel } from "../utils/guild";
-import { StreamDispatcher, VoiceConnection } from "discord.js";
+import { StreamDispatcher, VoiceChannel, VoiceConnection } from "discord.js";
 import * as eventWait from 'event-wait';
 
 
@@ -71,7 +71,7 @@ export class MusicPlayerController extends MessageController {
         }
     }
 
-    private async playCommand(command: PlayCommand, message: DiscordMessageEx): Promise<void> {
+    private async playCommand(command: PlayCommand, message: DiscordMessageEx, voiceCh: VoiceChannel): Promise<void> {
         const [, ...playQuerySplit] = command.split(' ');
         const playQuery = playQuerySplit.join(' ');
         const qItem = await this.searchYoutube(playQuery);
@@ -86,6 +86,7 @@ export class MusicPlayerController extends MessageController {
         } else {
             await message.inlineReply(`"${qItem.title}" will play shortly.`);
         }
+        this.voiceConnection = await voiceCh.join();
         this.queueNextReady.set();
     }
 
@@ -111,15 +112,15 @@ export class MusicPlayerController extends MessageController {
             return;
         }
 
-        this.voiceConnection = await voiceCh.join();
-        // TODO: ask for server BOT permissions (DiscordAPIError: Missing Permissions)
-        // so users cant steal the music bot.
-        /*
-            if this.voiceConnection:
+        if (this.voiceConnection && this.voiceConnection.channel.id !== voiceCh.id) {
+            // TODO: ask for server BOT permissions (DiscordAPIError: Missing Permissions)
+            // so users cant steal the music bot.
+            /*
                 await author.voice.setChannel(this.voiceConnection.channel);
-            else:
-                this.voiceCOnnection = voiceCh.join()
-        */
+            */
+            await message.inlineReply(`To use music player commands, you must be in a voice channel that is currently playing (${this.voiceConnection.channel})`);
+            return;
+        }
 
         if (command === '?!skip') {
             return await this.skipCommand(command, message);
@@ -128,7 +129,7 @@ export class MusicPlayerController extends MessageController {
             return await this.stfuCommand(command, message);
         }
         if (command.startsWith('?!play ')) {
-            return await this.playCommand(command, message);
+            return await this.playCommand(command, message, voiceCh);
         }
     }
 }
