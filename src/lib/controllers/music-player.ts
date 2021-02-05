@@ -5,16 +5,17 @@ import ytsr from 'ytsr';
 import { getGuildMember, getGuildMemberVoiceChannel } from "../utils/guild";
 import { StreamDispatcher, VoiceChannel, VoiceConnection } from "discord.js";
 import * as eventWait from 'event-wait';
+import { canMemberViewChannel } from "../utils/permissions";
 
 
-type PlayCommand = `?!play ${string}`;
-type SkipCommand = `?!skip`;
-type StfuCommand = `?!stfu`;
-type RestartCommand = '?!restart';
-type LoopOnCommand = '?!loop-on';
-type LoopOffCommand = '?!loop-off';
-type PauseCommand = '?!pause';
-type ResumeCommand = '?!resume';
+type PlayCommand = `play ${string}`;
+type SkipCommand = `skip`;
+type StfuCommand = `stfu`;
+type RestartCommand = 'restart';
+type LoopOnCommand = 'loop-on';
+type LoopOffCommand = 'loop-off';
+type PauseCommand = 'pause';
+type ResumeCommand = 'resume';
 type Commands = PlayCommand | SkipCommand | StfuCommand | RestartCommand | LoopOnCommand | LoopOffCommand | PauseCommand | ResumeCommand;
 type StopStreamReason = 'PLAY_NEXT' | 'STOP_CURRENT';
 interface IPlayerSettings {
@@ -22,9 +23,6 @@ interface IPlayerSettings {
     loop: boolean,
     volume: number
 }
-
-const commandKWS: [PlayCommand, SkipCommand, StfuCommand, RestartCommand, LoopOnCommand, LoopOffCommand, PauseCommand, ResumeCommand] = [
-    '?!play ', '?!skip', '?!stfu', '?!restart', '?!loop-on', '?!loop-off', '?!pause', '?!resume'];
 
 export class MusicPlayerController extends MessageController {
     playQueue: ytsr.Video[] = [];
@@ -163,67 +161,74 @@ export class MusicPlayerController extends MessageController {
     }
 
     help(): { kw: string, txt: string } {
+        const kw = 'player';
         return {
-            kw: 'music-player',
+            kw,
             txt: `\`\`\`:: MUSIC-PLAYER ::
-?!play YOUTUBE_SEARCH_WORDS >>> searches youtube and plays first video result.
-?!play YOUTUBE_URL >>> plays youtube url.
-?!skip >>> skips currently playing audio.
-?!stfu >>> clear audio queue and stop playing (leave channel).
-?!restart >>> starts playing current audio from beginning .
-?!pause >>> pauses currently playing audio.
-?!resume >>> resumes currently playing audio.
-?!loop-on >>> all tracks that will be played, will repeat when they reach the end. Use '?!skip' to go to the next one. 
-?!loop-off >>> disables ?!loop-on mode. 
-\`\`\``};
+?!${kw}::play YOUTUBE_SEARCH_WORDS >>> searches youtube and plays first video result.
+?!${kw}::play YOUTUBE_URL >>> plays youtube url.
+?!${kw}::skip >>> skips currently playing audio.
+?!${kw}::stfu >>> clear audio queue and stop playing (leave channel).
+?!${kw}::restart >>> starts playing current audio from beginning .
+?!${kw}::pause >>> pauses currently playing audio.
+?!${kw}::resume >>> resumes currently playing audio.
+?!${kw}::loop-on >>> all tracks that will be played, will repeat when they reach the end. Use '?!${kw}::skip' to go to the next one. 
+?!${kw}::loop-off >>> disables ?!${kw}::loop-on mode. \`\`\``
+        };
     }
 
-    canHandle(message: DiscordMessageEx): boolean {
-        return commandKWS.some(keyword => message.content.startsWith(keyword));
-    }
-
-    async handle(message: DiscordMessageEx): Promise<void> {
-        const command = message.content as Commands;
-        const author = getGuildMember(message.author.id);
+    async handle(command: Commands, message: DiscordMessageEx): Promise<boolean> {
+        const author = getGuildMember(message.author.id)!;
         const voiceCh = getGuildMemberVoiceChannel(author.id);
         if (!voiceCh) {
             await message.inlineReply('To use music player commands, you must be in a voice channel');
-            return;
+            return true;
         }
 
         if (this.voiceConnection && this.voiceConnection.channel.id !== voiceCh.id) {
-            // TODO: ask for server BOT permissions (DiscordAPIError: Missing Permissions)
-            // so users cant steal the music bot.
-            /*
-                await author.voice.setChannel(this.voiceConnection.channel);
-            */
-            await message.inlineReply(`To use music player commands, you must be in a voice channel that is currently playing (${this.voiceConnection.channel})`);
-            return;
+            const hasPermissions = canMemberViewChannel(author, this.voiceConnection.channel);
+            if (!hasPermissions) {
+                await message.inlineReply(
+                    `To use music player commands, you must be in a voice channel that is currently ` +
+                    `playing (${this.voiceConnection.channel.parent} >> ${this.voiceConnection.channel}), but you DON'T have permissions to join the channel.`
+                );
+                return true;
+            }
+            await author.voice.setChannel(this.voiceConnection.channel);
         }
 
-        if (command === '?!skip') {
-            return await this.skipCommand(command, message);
+        if (command === 'skip') {
+            await this.skipCommand(command, message);
+            return true;
         }
-        if (command === '?!stfu') {
-            return await this.stfuCommand(command, message);
+        if (command === 'stfu') {
+            await this.stfuCommand(command, message);
+            return true;
         }
-        if (command.startsWith('?!play ')) {
-            return await this.playCommand(command as PlayCommand, message, voiceCh);
+        if (command.startsWith('play ')) {
+            await this.playCommand(command as PlayCommand, message, voiceCh);
+            return true;
         }
-        if (command === '?!restart') {
-            return await this.restartCommand(command, message);
+        if (command === 'restart') {
+            await this.restartCommand(command, message);
+            return true;
         }
-        if (command === '?!pause') {
-            return await this.pauseCommand(command, message);
+        if (command === 'pause') {
+            await this.pauseCommand(command, message);
+            return true;
         }
-        if (command === '?!resume') {
-            return await this.resumeCommand(command, message);
+        if (command === 'resume') {
+            await this.resumeCommand(command, message);
+            return true;
         }
-        if (command === '?!loop-on') {
-            return await this.loopOnCommand(command, message);
+        if (command === 'loop-on') {
+            await this.loopOnCommand(command, message);
+            return true;
         }
-        if (command === '?!loop-off') {
-            return await this.loopOffCommand(command, message);
+        if (command === 'loop-off') {
+            await this.loopOffCommand(command, message);
+            return true;
         }
+        return false;
     }
 }

@@ -7,7 +7,7 @@ const secrets = JSON.parse(fs.readFileSync(process.cwd() + '/secrets.json', 'utf
 const config = {
     secrets,
     discordGuild: {
-        id: '627178364716974091',
+        id: '807195459956899880',
     }
 } as const;
 

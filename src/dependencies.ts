@@ -4,11 +4,13 @@ import * as eventWait from 'event-wait';
 import { DiscordMessageQueueFactory } from './lib/discord-message-queue-factory';
 import { MessageController } from './lib/message-controller';
 import { MusicPlayerController } from './lib/controllers/music-player';
+import { AdminControlPanelController } from './lib/controllers/admin-control-panel';
 
 class Dependencies {
     public readonly discordBot = new Discord.Client();
     public readonly discordMessageQueueFactory = new DiscordMessageQueueFactory();
     public readonly messageControllers: MessageController[] = [
+        new AdminControlPanelController(),
         new MusicPlayerController()
     ];
 

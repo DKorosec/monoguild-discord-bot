@@ -6,12 +6,12 @@ export function getGuild(): Guild {
     return dependencies.discordBot.guilds.cache.get(config.discordGuild.id)!;
 }
 
-export function getGuildMember(memberId: string): GuildMember {
-    return getGuild().members.cache.get(memberId)!;
+export function getGuildMember(memberId: string): GuildMember | undefined {
+    return getGuild().members.cache.get(memberId);
 }
 
 export function getGuildMemberVoiceChannel(memeberId: string): VoiceChannel | null {
-    const member = getGuildMember(memeberId);
+    const member = getGuildMember(memeberId)!;
     if (member.voice.channel?.guild.id !== config.discordGuild.id) {
         return null;
     }

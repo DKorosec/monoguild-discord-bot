@@ -11,27 +11,25 @@ Discord.Structures.extend('Message', () => MessageExtension);
 async function handleHelp(message: DiscordMessageEx): Promise<boolean> {
     function cnt2help(cnt: MessageController): string {
         const { kw, txt } = cnt.help();
-        return `
-            > ?!help ${kw}
-            ${txt}
-            \n
-        `;
+        return `> ?!help ${kw}\n${txt}`;
     }
 
     if (message.content === '?!help') {
         // list all help options
-        const helpMsg = dependencies.messageControllers.map(cnt => {
+        const helpMsg = dependencies.messageControllers.filter(cnt => cnt.help().kw).map(cnt => {
             return cnt2help(cnt);
         }).join('\n');
 
-        await message.inlineReply(helpMsg);
+        await message.inlineReply(helpMsg + '\n\n' +
+            'Got some cool ideas and want to extend the current bot? Pull request your idea at:\n' +
+            'https://github.com/DKorosec/monoguild-discord-bot');
         return true;
 
     } else if (message.content.startsWith('?!help ')) {
         // list specific help option (if found)
         const [, ...rest] = message.content.split(' ');
         const helpKW = rest.join(' ');
-        const cnt = dependencies.messageControllers.find(cnt => cnt.help().kw === helpKW);
+        const cnt = dependencies.messageControllers.filter(cnt => cnt.help().kw).find(cnt => cnt.help().kw === helpKW);
         if (!cnt) {
             return false;
         }
@@ -48,16 +46,30 @@ async function handleHelp(message: DiscordMessageEx): Promise<boolean> {
 async function processMessageQueue(): Promise<void> {
     while (true) {
         const message = await dependencies.discordMessageQueueFactory.consume();
+        if (!message.content.startsWith('?!')) {
+            continue;
+        }
+
         if (await handleHelp(message)) {
             continue;
         }
-        // find all that can handle the message request.
+        // find the one that can handle the message request.
         const canHandleMap = await Promise.all(dependencies.messageControllers
-            .map(controller => ({ controller, canHandle: controller.canHandle(message) })));
+            .map(async controller => {
+                return await controller.canHandle(message) ? controller : null;
+            }));
         // filter out those who cant.
-        const canHandle = canHandleMap.filter(({ canHandle }) => canHandle);
+        const controller = canHandleMap.find(<T>(controller: T): controller is NonNullable<T> => controller !== null);
+        if (!controller) {
+            await message.inlineReply('Command not understood, please use `?!help` for list of commands.');
+            continue;
+        }
         // the ones who can, should start to process the message.
-        await Promise.all(canHandle.map(({ controller }) => controller.handle(message)));
+        const handledResult = await controller.handle(message.content.substring(controller.commandPrefix.length), message);
+        if (!handledResult) {
+            await message.inlineReply(`Invalid command. see \`?!help ${controller.help().kw}\` for usable commands.`);
+            continue;
+        }
     }
 }
 
