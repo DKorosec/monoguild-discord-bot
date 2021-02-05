@@ -10,15 +10,32 @@ import * as eventWait from 'event-wait';
 type PlayCommand = `?!play ${string}`;
 type SkipCommand = `?!skip`;
 type StfuCommand = `?!stfu`;
-type Commands = PlayCommand | SkipCommand | StfuCommand;
+type RestartCommand = '?!restart';
+type LoopOnCommand = '?!loop-on';
+type LoopOffCommand = '?!loop-off';
+type PauseCommand = '?!pause';
+type ResumeCommand = '?!resume';
+type Commands = PlayCommand | SkipCommand | StfuCommand | RestartCommand | LoopOnCommand | LoopOffCommand | PauseCommand | ResumeCommand;
+type StopStreamReason = 'PLAY_NEXT' | 'STOP_CURRENT';
+interface IPlayerSettings {
+    restartCurrent: boolean
+    loop: boolean,
+    volume: number
+}
 
-const commandKWS: Commands[] = ['?!skip', '?!stfu', '?!play '];
+const commandKWS: [PlayCommand, SkipCommand, StfuCommand, RestartCommand, LoopOnCommand, LoopOffCommand, PauseCommand, ResumeCommand] = [
+    '?!play ', '?!skip', '?!stfu', '?!restart', '?!loop-on', '?!loop-off', '?!pause', '?!resume'];
 
 export class MusicPlayerController extends MessageController {
     playQueue: ytsr.Video[] = [];
     queueNextReady = eventWait.createWaitEventObject();
     voiceConnection: VoiceConnection | null = null;
     currentStreamDispatcher: StreamDispatcher | null = null;
+    playerSettings: IPlayerSettings = {
+        restartCurrent: false,
+        loop: false,
+        volume: 0.10
+    };
 
     constructor() {
         super();
@@ -42,15 +59,28 @@ export class MusicPlayerController extends MessageController {
         const highWaterMark = 1048576; // 1 MB;
         while (await this.queueNextReady.wait()) {
             const item = this.playQueue.shift()!;
+            let mustPlayNextSong = false;
             this.currentStreamDispatcher = this.voiceConnection!.play(
                 ytdl(item.url, { highWaterMark }), { highWaterMark }
             );
+            this.currentStreamDispatcher.setVolume(this.playerSettings.volume);
             const finishFlag = eventWait.createWaitEventObject();
-            this.currentStreamDispatcher.on('error', finishFlag.set);
-            this.currentStreamDispatcher.on('finish', finishFlag.set);
-            this.currentStreamDispatcher.on('end', finishFlag.set);
+            this.currentStreamDispatcher.once('error', (err) => {
+                mustPlayNextSong = (err.message as StopStreamReason) === 'PLAY_NEXT';
+                finishFlag.set();
+            });
+            this.currentStreamDispatcher.once('finish', finishFlag.set);
+            this.currentStreamDispatcher.once('end', finishFlag.set);
             await finishFlag.wait();
             this.currentStreamDispatcher = null;
+
+            if (!mustPlayNextSong) {
+                if (this.playerSettings.restartCurrent || this.playerSettings.loop) {
+                    this.playerSettings.restartCurrent = false;
+                    this.playQueue.unshift(item);
+                }
+            }
+
             if (!this.playQueue.length) {
                 // await next loop.
                 this.queueNextReady.clear();
@@ -64,10 +94,10 @@ export class MusicPlayerController extends MessageController {
         return !this.queueNextReady.isSet() && this.playQueue.length === 0;
     }
 
-    private stopCurrentStream(): void {
+    private stopCurrentStream(reason: StopStreamReason): void {
         if (this.voiceConnection) {
             this.currentStreamDispatcher?.end();
-            this.currentStreamDispatcher?.destroy(new Error('END_STREAM'));
+            this.currentStreamDispatcher?.destroy(new Error(reason));
         }
     }
 
@@ -91,12 +121,61 @@ export class MusicPlayerController extends MessageController {
     }
 
     private skipCommand(_command: SkipCommand, _message: DiscordMessageEx): void {
-        this.stopCurrentStream();
+        this.stopCurrentStream('PLAY_NEXT');
     }
 
     private stfuCommand(_command: StfuCommand, _message: DiscordMessageEx): void {
         this.playQueue = [];
-        this.stopCurrentStream();
+        this.stopCurrentStream('PLAY_NEXT');
+    }
+
+    private async restartCommand(_command: RestartCommand, message: DiscordMessageEx): Promise<void> {
+        if (this.isPlayerIdle()) {
+            await message.inlineReply(`Nothing to restart, because player is currently idle.`);
+            return;
+        }
+        this.playerSettings.restartCurrent = true;
+        this.stopCurrentStream('STOP_CURRENT');
+    }
+
+    private async pauseCommand(_command: PauseCommand, message: DiscordMessageEx): Promise<void> {
+        if (this.isPlayerIdle()) {
+            await message.inlineReply(`Nothing to pause, because player is currently idle.`);
+        }
+        this.currentStreamDispatcher!.pause();
+    }
+
+    private async resumeCommand(_command: ResumeCommand, message: DiscordMessageEx): Promise<void> {
+        if (this.isPlayerIdle()) {
+            await message.inlineReply(`Nothing to resume, because player is currently idle.`);
+        }
+        this.currentStreamDispatcher!.resume();
+    }
+
+    private async loopOnCommand(_command: LoopOnCommand, message: DiscordMessageEx): Promise<void> {
+        await message.inlineReply(`Looping every song forever. Skip to go to the next song.`);
+        this.playerSettings.loop = true;
+    }
+
+    private async loopOffCommand(_command: LoopOffCommand, message: DiscordMessageEx): Promise<void> {
+        await message.inlineReply(`Loop mode deactivated.`);
+        this.playerSettings.loop = false;
+    }
+
+    help(): { kw: string, txt: string } {
+        return {
+            kw: 'music-player',
+            txt: `\`\`\`:: MUSIC-PLAYER ::
+?!play YOUTUBE_SEARCH_WORDS >>> searches youtube and plays first video result.
+?!play YOUTUBE_URL >>> plays youtube url.
+?!skip >>> skips currently playing audio.
+?!stfu >>> clear audio queue and stop playing (leave channel).
+?!restart >>> starts playing current audio from beginning .
+?!pause >>> pauses currently playing audio.
+?!resume >>> resumes currently playing audio.
+?!loop-on >>> all tracks that will be played, will repeat when they reach the end. Use '?!skip' to go to the next one. 
+?!loop-off >>> disables ?!loop-on mode. 
+\`\`\``};
     }
 
     canHandle(message: DiscordMessageEx): boolean {
@@ -129,7 +208,22 @@ export class MusicPlayerController extends MessageController {
             return await this.stfuCommand(command, message);
         }
         if (command.startsWith('?!play ')) {
-            return await this.playCommand(command, message, voiceCh);
+            return await this.playCommand(command as PlayCommand, message, voiceCh);
+        }
+        if (command === '?!restart') {
+            return await this.restartCommand(command, message);
+        }
+        if (command === '?!pause') {
+            return await this.pauseCommand(command, message);
+        }
+        if (command === '?!resume') {
+            return await this.resumeCommand(command, message);
+        }
+        if (command === '?!loop-on') {
+            return await this.loopOnCommand(command, message);
+        }
+        if (command === '?!loop-off') {
+            return await this.loopOffCommand(command, message);
         }
     }
 }
