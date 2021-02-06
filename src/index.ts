@@ -21,9 +21,9 @@ async function handleHelp(message: DiscordMessageEx): Promise<boolean> {
             return cnt2help(cnt);
         }).join('\n');
 
-        await message.inlineReply(helpMsg + '\n\n' +
-            'Got some cool ideas and want to extend the current bot? Pull request your idea at:\n' +
-            'https://github.com/DKorosec/monoguild-discord-bot');
+        await message.inlineReply(helpMsg + '' +
+            '```powershell\nGot some cool ideas and want to extend the current bot? Pull request your idea at:\n' +
+            '"https://github.com/DKorosec/monoguild-discord-bot"```');
         return true;
 
     } else if (message.content.startsWith('?!help ')) {

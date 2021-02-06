@@ -10,8 +10,8 @@ class Dependencies {
     public readonly discordBot = new Discord.Client();
     public readonly discordMessageQueueFactory = new DiscordMessageQueueFactory();
     public readonly messageControllers: MessageController[] = [
-        new AdminControlPanelController(),
-        new MusicPlayerController()
+        new MusicPlayerController(),
+        new AdminControlPanelController()
     ];
 
     async initialize(): Promise<void> {
