@@ -5,6 +5,7 @@ import MessageExtension from './discord-extensions/message';
 import { DiscordMessageEx } from './discord-extensions/types';
 import { isMessageProcessable } from './lib/utils/message-filter';
 import { MessageController } from './lib/message-controller';
+import { getGuildChannel } from './lib/utils/guild';
 Discord.Structures.extend('Message', () => MessageExtension);
 
 
@@ -49,6 +50,14 @@ async function processMessageQueue(): Promise<void> {
         if (!message.content.startsWith('?!')) {
             continue;
         }
+
+
+        const isGeneralTextCh = getGuildChannel(message.channel.id)!.name.toLowerCase() === 'general';
+        if (isGeneralTextCh) {
+            await message.inlineReply('Bot commands are disabled in general text channels. Please, keep general clean.');
+            continue;
+        }
+
 
         if (await handleHelp(message)) {
             continue;

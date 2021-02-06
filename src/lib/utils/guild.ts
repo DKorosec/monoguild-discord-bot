@@ -1,6 +1,6 @@
 import { dependencies } from "../../dependencies";
 import { config } from '../../config';
-import { Guild, GuildMember, VoiceChannel } from "discord.js";
+import { Guild, GuildChannel, GuildMember, VoiceChannel } from "discord.js";
 
 export function getGuild(): Guild {
     return dependencies.discordBot.guilds.cache.get(config.discordGuild.id)!;
@@ -16,4 +16,8 @@ export function getGuildMemberVoiceChannel(memeberId: string): VoiceChannel | nu
         return null;
     }
     return member.voice.channel;
+}
+
+export function getGuildChannel(channelId: string): GuildChannel | undefined {
+    return getGuild().channels.cache.get(channelId);
 }
